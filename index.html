@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#4F7EFF">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Travel">
+  <meta name="description" content="你的隨身旅遊規劃助手">
+  <title>Travel Companion</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+  <!-- App Shell -->
+  <div id="app">
+
+    <!-- Top bar -->
+    <header class="top-bar">
+      <div class="top-bar-inner">
+        <h1 class="app-title">✈️ Travel Companion</h1>
+        <span id="current-trip-badge" class="trip-badge" style="display:none"></span>
+      </div>
+    </header>
+
+    <!-- Pages Container -->
+    <main class="pages-container">
+
+      <!-- ============ TRIPS PAGE ============ -->
+      <section id="page-trips" class="page active">
+        <div class="page-content" id="trips-list">
+          <!-- rendered by trips.js -->
+        </div>
+        <button class="fab" id="add-trip-btn" title="新增旅程">＋</button>
+      </section>
+
+      <!-- ============ ITINERARY PAGE ============ -->
+      <section id="page-itinerary" class="page">
+        <div id="itinerary-no-trip" class="empty-state" style="display:none">
+          <div class="empty-icon">🗓️</div>
+          <h3>請先選擇旅程</h3>
+          <p>在 Trips 頁面選擇或建立旅程</p>
+        </div>
+        <div id="day-tabs-wrap" class="day-tabs-wrap">
+          <div id="day-tabs" class="day-tabs"></div>
+        </div>
+        <div class="page-content" id="itinerary-items"></div>
+        <button class="fab" id="add-item-btn" title="新增行程">＋</button>
+      </section>
+
+      <!-- ============ MAP PAGE ============ -->
+      <section id="page-map" class="page">
+        <div class="page-content" id="map-content"></div>
+      </section>
+
+      <!-- ============ BUDGET PAGE ============ -->
+      <section id="page-budget" class="page">
+        <div class="page-content">
+          <div id="budget-overview"></div>
+          <div class="card chart-card">
+            <h3 class="section-title">支出分析</h3>
+            <div class="chart-wrap">
+              <canvas id="budget-chart"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="section-header">
+              <h3 class="section-title">手動支出</h3>
+              <button class="btn btn-sm btn-primary" id="add-expense-btn">+ 新增</button>
+            </div>
+            <div id="expense-list"></div>
+          </div>
+          <div class="card" id="budget-content">
+            <!-- fallback for no trip -->
+          </div>
+          <div class="card">
+            <h3 class="section-title">分帳計算</h3>
+            <div class="form-row">
+              <label class="form-label">總金額（TWD）</label>
+              <input type="number" id="split-amount" class="form-input" placeholder="0">
+            </div>
+            <div class="form-row">
+              <label class="form-label">付款人</label>
+              <input type="text" id="split-paidby" class="form-input" placeholder="付款人名稱">
+            </div>
+            <div class="form-row">
+              <label class="form-label">分攤人數</label>
+              <input type="number" id="split-count" class="form-input" placeholder="2" min="1" value="2">
+            </div>
+            <button class="btn btn-primary btn-full" id="calc-split-btn">計算</button>
+            <div id="split-result"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ CHECKLIST PAGE ============ -->
+      <section id="page-checklist" class="page">
+        <div class="page-content" id="checklist-content"></div>
+        <div class="checklist-add-bar">
+          <input type="text" id="checklist-add-input" class="form-input" placeholder="新增清單項目...">
+          <button class="btn btn-primary" id="checklist-add-btn">新增</button>
+        </div>
+      </section>
+
+      <!-- ============ INFO PAGE ============ -->
+      <section id="page-info" class="page">
+        <div class="page-header-row">
+          <button class="back-btn" data-back="trips">← 返回</button>
+          <h2>重要資訊中心</h2>
+        </div>
+        <div class="page-content" id="info-content"></div>
+      </section>
+
+      <!-- ============ AI PAGE ============ -->
+      <section id="page-ai" class="page">
+        <div class="page-header-row">
+          <button class="back-btn" data-back="trips">← 返回</button>
+          <h2>AI 行程區</h2>
+        </div>
+        <div class="page-content" id="ai-content">
+          <div class="card">
+            <p class="ai-hint">貼上 ChatGPT / Claude / Gemini 產生的行程建議，支援 Markdown 格式渲染</p>
+            <textarea id="ai-textarea" class="form-input ai-textarea" placeholder="在此貼入 AI 產生的行程文字..."></textarea>
+            <div class="ai-btn-row">
+              <button class="btn btn-primary" id="ai-render-btn">🎨 渲染預覽</button>
+              <button class="btn btn-outline" id="ai-clear-btn">🗑️ 清除</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3 class="section-title">預覽</h3>
+            <div id="ai-preview" class="ai-preview"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ DATA PAGE ============ -->
+      <section id="page-data" class="page">
+        <div class="page-header-row">
+          <button class="back-btn" data-back="trips">← 返回</button>
+          <h2>資料管理</h2>
+        </div>
+        <div class="page-content">
+          <div class="card">
+            <h3 class="section-title">📤 匯出備份</h3>
+            <p class="hint-text">將所有旅程資料匯出為 JSON 檔案</p>
+            <button class="btn btn-primary btn-full" id="export-btn">匯出 JSON</button>
+          </div>
+          <div class="card">
+            <h3 class="section-title">📥 匯入備份</h3>
+            <p class="hint-text" style="color:var(--danger)">⚠️ 匯入將覆蓋現有所有資料</p>
+            <label class="btn btn-outline btn-full import-label">
+              選擇備份檔案
+              <input type="file" id="import-file" accept=".json" style="display:none">
+            </label>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-page="trips">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Trips</span>
+      </button>
+      <button class="nav-btn" data-page="itinerary">
+        <span class="nav-icon">🗓️</span>
+        <span class="nav-label">Itinerary</span>
+      </button>
+      <button class="nav-btn" data-page="map">
+        <span class="nav-icon">🗺️</span>
+        <span class="nav-label">Map</span>
+      </button>
+      <button class="nav-btn" data-page="budget">
+        <span class="nav-icon">💰</span>
+        <span class="nav-label">Budget</span>
+      </button>
+      <button class="nav-btn" data-page="checklist">
+        <span class="nav-icon">☑️</span>
+        <span class="nav-label">Check</span>
+      </button>
+      <button class="nav-btn" id="more-btn">
+        <span class="nav-icon">⋯</span>
+        <span class="nav-label">更多</span>
+      </button>
+    </nav>
+
+    <!-- More Menu -->
+    <div id="more-menu" class="more-menu">
+      <button class="more-menu-item" data-page="info">📋 重要資訊</button>
+      <button class="more-menu-item" data-page="ai">🤖 AI 行程區</button>
+      <button class="more-menu-item" data-page="data">💾 資料管理</button>
+    </div>
+
+  </div><!-- #app -->
+
+  <!-- ============ BOTTOM SHEETS ============ -->
+
+  <!-- Trip Sheet -->
+  <div class="sheet-overlay" onclick="closeAllSheets()"></div>
+
+  <div id="trip-sheet" class="bottom-sheet">
+    <div class="sheet-header">
+      <div class="sheet-handle"></div>
+      <h3 id="trip-form-title">新增旅程</h3>
+      <button class="sheet-close" id="trip-sheet-close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <form id="trip-form">
+        <input type="hidden" id="trip-form-id">
+        <div class="form-row">
+          <label class="form-label">旅程名稱 <span class="required">*</span></label>
+          <input type="text" id="trip-name-input" class="form-input" placeholder="例：東京五日遊" required>
+        </div>
+        <div class="form-row-2">
+          <div class="form-row">
+            <label class="form-label">國家 <span class="required">*</span></label>
+            <input type="text" id="trip-country-input" class="form-input" placeholder="日本" required>
+          </div>
+          <div class="form-row">
+            <label class="form-label">城市 <span class="required">*</span></label>
+            <input type="text" id="trip-city-input" class="form-input" placeholder="東京" required>
+          </div>
+        </div>
+        <div class="form-row-2">
+          <div class="form-row">
+            <label class="form-label">出發日期 <span class="required">*</span></label>
+            <input type="date" id="trip-start-input" class="form-input" required>
+          </div>
+          <div class="form-row">
+            <label class="form-label">回程日期 <span class="required">*</span></label>
+            <input type="date" id="trip-end-input" class="form-input" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label">封面圖片</label>
+          <label class="file-upload-label">
+            📷 選擇圖片
+            <input type="file" id="trip-cover-input" accept="image/*" style="display:none">
+          </label>
+          <img id="trip-cover-preview" class="cover-preview" style="display:none" alt="封面預覽">
+        </div>
+        <div class="form-row">
+          <label class="form-label">備註</label>
+          <textarea id="trip-notes-input" class="form-input" rows="3" placeholder="旅程備註..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">儲存旅程</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Itinerary Item Sheet -->
+  <div id="item-sheet" class="bottom-sheet">
+    <div class="sheet-header">
+      <div class="sheet-handle"></div>
+      <h3 id="item-form-title">新增行程</h3>
+      <button class="sheet-close" id="item-sheet-close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <form id="item-form">
+        <input type="hidden" id="item-form-id">
+        <div class="form-row">
+          <label class="form-label">行程名稱 <span class="required">*</span></label>
+          <input type="text" id="item-name-input" class="form-input" placeholder="例：國華街逛吃" required>
+        </div>
+        <div class="form-row">
+          <label class="form-label">類型</label>
+          <select id="item-type-input" class="form-input">
+            <option value="attraction">🏛️ 景點</option>
+            <option value="restaurant">🍜 餐廳</option>
+            <option value="hotel">🏨 住宿</option>
+            <option value="transport">🚗 交通</option>
+            <option value="shopping">🛍️ 購物</option>
+            <option value="other">🔄 備用</option>
+          </select>
+        </div>
+        <div class="form-row-2">
+          <div class="form-row">
+            <label class="form-label">開始時間</label>
+            <input type="time" id="item-start-time" class="form-input">
+          </div>
+          <div class="form-row">
+            <label class="form-label">結束時間</label>
+            <input type="time" id="item-end-time" class="form-input">
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label">地址</label>
+          <input type="text" id="item-address-input" class="form-input" placeholder="地址">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Google Maps 連結</label>
+          <input type="url" id="item-maps-input" class="form-input" placeholder="https://maps.google.com/...">
+        </div>
+        <div class="form-row-2">
+          <div class="form-row">
+            <label class="form-label">預估費用（TWD）</label>
+            <input type="number" id="item-est-cost" class="form-input" placeholder="0" min="0">
+          </div>
+          <div class="form-row">
+            <label class="form-label">實際費用（TWD）</label>
+            <input type="number" id="item-actual-cost" class="form-input" placeholder="0" min="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="form-label">備註</label>
+          <textarea id="item-notes-input" class="form-input" rows="2" placeholder="備註..."></textarea>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Plan B（備用方案）</label>
+          <textarea id="item-planb-input" class="form-input" rows="2" placeholder="若此行程無法進行的替代方案..."></textarea>
+        </div>
+        <div class="form-row form-row-inline">
+          <label class="form-label">已完成</label>
+          <input type="checkbox" id="item-completed-cb" class="form-checkbox">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">儲存行程</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Expense Sheet -->
+  <div id="expense-sheet" class="bottom-sheet">
+    <div class="sheet-header">
+      <div class="sheet-handle"></div>
+      <h3>新增支出</h3>
+      <button class="sheet-close" id="expense-sheet-close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <form id="expense-form">
+        <div class="form-row">
+          <label class="form-label">分類</label>
+          <select id="expense-cat" class="form-input">
+            <option value="flight">✈️ 機票</option>
+            <option value="hotel">🏨 住宿</option>
+            <option value="transport">🚌 交通</option>
+            <option value="food">🍽️ 餐飲</option>
+            <option value="attraction">🎫 景點門票</option>
+            <option value="shopping">🛍️ 購物</option>
+            <option value="other">📦 其他</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="form-label">說明 <span class="required">*</span></label>
+          <input type="text" id="expense-desc" class="form-input" placeholder="例：富盛號碗粿" required>
+        </div>
+        <div class="form-row">
+          <label class="form-label">金額（TWD）<span class="required">*</span></label>
+          <input type="number" id="expense-amount" class="form-input" placeholder="0" min="0" required>
+        </div>
+        <div class="form-row">
+          <label class="form-label">日期</label>
+          <input type="date" id="expense-date" class="form-input">
+        </div>
+        <div class="form-row">
+          <label class="form-label">付款人</label>
+          <input type="text" id="expense-paidby" class="form-input" placeholder="付款人">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">新增支出</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- CDN Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+  <!-- App Scripts -->
+  <script src="./js/utils.js"></script>
+  <script src="./js/storage.js"></script>
+  <script src="./js/trips.js"></script>
+  <script src="./js/itinerary.js"></script>
+  <script src="./js/budget.js"></script>
+  <script src="./js/checklist.js"></script>
+  <script src="./js/info.js"></script>
+  <script src="./js/ai.js"></script>
+  <script src="./js/app.js"></script>
+
+</body>
+</html>
