@@ -1,31 +1,41 @@
-/* info.js — important info center module */
+/* info.js — important info center module (Firestore-backed ES module) */
 
-const InfoModule = (() => {
+import {
+  subscribeInfo, saveInfo, getCachedInfo,
+} from './storage.js';
+import { getCurrentTripId } from './state.js';
+
+export const InfoModule = (() => {
+  let _subTripId   = null;
+  let _unsubscribe = null;
+
   function escapeHtml(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function getData(tripId) {
-    return Storage.get('info_' + tripId, { flight: {}, hotels: [], emergency: {} });
+  function subscribeToTrip(tripId, onData) {
+    if (_subTripId === tripId) return;
+    if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+    _subTripId = tripId;
+    if (!tripId) return;
+    _unsubscribe = subscribeInfo(tripId, onData);
   }
 
-  function saveData(tripId, data) {
-    Storage.set('info_' + tripId, data);
+  function getDefaultData() {
+    return { flight: {}, hotels: [], emergency: { twMofa: '+886-800-085-095' } };
   }
 
-  function render() {
+  function renderUI(tripId) {
     try {
-      const tripId = App.getCurrentTripId();
       const container = document.getElementById('info-content');
       if (!container) return;
 
-      if (!tripId) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('info',56,1.25)}</div><h3>請先選擇旅程</h3></div>`;
-        return;
-      }
-
-      const data = getData(tripId);
+      const raw  = getCachedInfo(tripId);
+      const data = raw || getDefaultData();
+      if (!data.flight)    data.flight = {};
+      if (!data.hotels)    data.hotels = [];
+      if (!data.emergency) data.emergency = {};
 
       container.innerHTML = `
         <div class="accordion">
@@ -128,11 +138,10 @@ const InfoModule = (() => {
           </div>
         </div>`;
 
-      // accordion toggle
+      // accordion toggles
       container.querySelectorAll('.accordion-header').forEach(btn => {
         btn.addEventListener('click', () => {
-          const bodyId = btn.dataset.target;
-          const body = document.getElementById(bodyId);
+          const body  = document.getElementById(btn.dataset.target);
           const arrow = btn.querySelector('.acc-arrow');
           if (!body) return;
           const isOpen = body.classList.toggle('open');
@@ -140,48 +149,49 @@ const InfoModule = (() => {
         });
       });
 
-      // open first accordion by default
-      const firstBody = container.querySelector('.accordion-body');
+      // open first accordion
+      const firstBody  = container.querySelector('.accordion-body');
       const firstArrow = container.querySelector('.acc-arrow');
       if (firstBody) { firstBody.classList.add('open'); if (firstArrow) firstArrow.textContent = '▲'; }
 
       // flight form
-      container.querySelector('#flight-form')?.addEventListener('submit', e => {
+      container.querySelector('#flight-form')?.addEventListener('submit', async e => {
         e.preventDefault();
-        const fd = new FormData(e.target);
-        data.flight = Object.fromEntries(fd.entries());
-        saveData(tripId, data);
-        showToast('航班資訊已儲存');
+        const fd  = new FormData(e.target);
+        const newData = JSON.parse(JSON.stringify(data));
+        newData.flight = Object.fromEntries(fd.entries());
+        try { await saveInfo(tripId, newData); showToast('航班資訊已儲存'); }
+        catch(err) { showToast('儲存失敗', 'error'); }
       });
 
       // emergency form
-      container.querySelector('#emergency-form')?.addEventListener('submit', e => {
+      container.querySelector('#emergency-form')?.addEventListener('submit', async e => {
         e.preventDefault();
-        const fd = new FormData(e.target);
-        data.emergency = Object.fromEntries(fd.entries());
-        saveData(tripId, data);
-        showToast('緊急資訊已儲存');
+        const fd  = new FormData(e.target);
+        const newData = JSON.parse(JSON.stringify(data));
+        newData.emergency = Object.fromEntries(fd.entries());
+        try { await saveInfo(tripId, newData); showToast('緊急資訊已儲存'); }
+        catch(err) { showToast('儲存失敗', 'error'); }
       });
 
       // add hotel
-      container.querySelector('#add-hotel-btn')?.addEventListener('click', () => {
-        data.hotels.push({ id: generateId(), name:'', address:'', checkin:'', checkout:'', confirmNo:'', phone:'', notes:'' });
-        saveData(tripId, data);
-        render();
-        // open hotel accordion
-        const body = document.getElementById('acc-hotel-body');
-        if (body) body.classList.add('open');
+      container.querySelector('#add-hotel-btn')?.addEventListener('click', async () => {
+        const newData = JSON.parse(JSON.stringify(data));
+        newData.hotels.push({ id: generateId(), name:'', address:'', checkin:'', checkout:'', confirmNo:'', phone:'', notes:'' });
+        try { await saveInfo(tripId, newData); }
+        catch(err) { showToast('新增失敗', 'error'); }
       });
 
       // hotel forms
       container.querySelectorAll('.hotel-form').forEach(form => {
-        form.addEventListener('submit', e => {
+        form.addEventListener('submit', async e => {
           e.preventDefault();
           const idx = Number(form.dataset.idx);
-          const fd = new FormData(e.target);
-          data.hotels[idx] = { ...data.hotels[idx], ...Object.fromEntries(fd.entries()) };
-          saveData(tripId, data);
-          showToast('住宿資訊已儲存');
+          const fd  = new FormData(e.target);
+          const newData = JSON.parse(JSON.stringify(data));
+          newData.hotels[idx] = { ...newData.hotels[idx], ...Object.fromEntries(fd.entries()) };
+          try { await saveInfo(tripId, newData); showToast('住宿資訊已儲存'); }
+          catch(err) { showToast('儲存失敗', 'error'); }
         });
       });
 
@@ -190,14 +200,15 @@ const InfoModule = (() => {
         btn.addEventListener('click', async e => {
           e.stopPropagation();
           if (await showConfirm('確定刪除這筆住宿資訊嗎？')) {
-            data.hotels.splice(Number(btn.dataset.idx), 1);
-            saveData(tripId, data);
-            render();
+            const newData = JSON.parse(JSON.stringify(data));
+            newData.hotels.splice(Number(btn.dataset.idx), 1);
+            try { await saveInfo(tripId, newData); }
+            catch(err) { showToast('刪除失敗', 'error'); }
           }
         });
       });
 
-      // map links in hotel
+      // hotel map links
       container.querySelectorAll('.hotel-map-link').forEach(link => {
         link.addEventListener('click', () => {
           const addr = link.dataset.addr;
@@ -220,7 +231,9 @@ const InfoModule = (() => {
             <input class="form-input" name="name" value="${escapeHtml(h.name||'')}">
           </div>
           <div class="form-row">
-            <label class="form-label">地址 <span class="hotel-map-link clickable" data-addr="${escapeHtml(h.address||'')}" style="${h.address?'':'display:none'}">${icon('pin',13,2)} 開啟地圖</span></label>
+            <label class="form-label">地址
+              <span class="hotel-map-link clickable" data-addr="${escapeHtml(h.address||'')}" style="${h.address?'':'display:none'}">${icon('pin',13,2)} 開啟地圖</span>
+            </label>
             <input class="form-input" name="address" value="${escapeHtml(h.address||'')}" placeholder="飯店地址">
           </div>
           <div class="form-row-2">
@@ -248,6 +261,21 @@ const InfoModule = (() => {
           <button type="submit" class="btn btn-primary btn-full">儲存此住宿</button>
         </form>
       </div>`;
+  }
+
+  function render(tripId) {
+    try {
+      const container = document.getElementById('info-content');
+      if (!container) return;
+
+      if (!tripId) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('info',56,1.25)}</div><h3>請先選擇旅程</h3></div>`;
+        return;
+      }
+
+      subscribeToTrip(tripId, () => renderUI(tripId));
+      renderUI(tripId);
+    } catch(e) {}
   }
 
   function init() {}

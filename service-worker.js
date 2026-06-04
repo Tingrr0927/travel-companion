@@ -1,10 +1,14 @@
-const CACHE_NAME = 'travel-companion-v1';
+const CACHE_NAME = 'travel-companion-v2';
 const ASSETS = [
   './',
   './index.html',
   './css/style.css',
   './js/utils.js',
+  './js/state.js',
+  './js/firebase.js',
+  './js/auth.js',
   './js/storage.js',
+  './js/share.js',
   './js/trips.js',
   './js/itinerary.js',
   './js/budget.js',

@@ -1,68 +1,48 @@
-/* trips.js — trip CRUD module */
+/* trips.js — trip CRUD module (Firestore-backed ES module) */
 
-const TripsModule = (() => {
-  function getAll() {
-    return Storage.get('trips', []);
+import { subscribeTrips, createTrip, updateTrip, deleteTrip, getCachedTrips, getCachedTrip, getCachedItems, getCachedExpenses, LocalStorage } from './storage.js';
+import { getCurrentUser, getDisplayName } from './auth.js';
+import { setCurrentTripId, navigate } from './state.js';
+import { ChecklistModule } from './checklist.js';
+
+export const TripsModule = (() => {
+  let _unsubTrips = null;
+  let _shareCurrentTripId = null;
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   function getById(id) {
-    return getAll().find(t => t.id === id) || null;
-  }
-
-  function save(tripData) {
-    try {
-      const trips = getAll();
-      const existing = trips.findIndex(t => t.id === tripData.id);
-      if (existing >= 0) {
-        trips[existing] = tripData;
-      } else {
-        trips.unshift(tripData);
-      }
-      Storage.set('trips', trips);
-      return true;
-    } catch(e) { return false; }
-  }
-
-  function remove(id) {
-    try {
-      const trips = getAll().filter(t => t.id !== id);
-      Storage.set('trips', trips);
-      // also remove related data
-      Storage.remove('itinerary_' + id);
-      Storage.remove('budget_' + id);
-      Storage.remove('checklist_' + id);
-      Storage.remove('info_' + id);
-      Storage.remove('expenses_' + id);
-      return true;
-    } catch(e) { return false; }
+    return getCachedTrip(id);
   }
 
   function getProgress(tripId) {
     try {
-      const items = Storage.get('itinerary_' + tripId, []);
+      const items = getCachedItems(tripId) || [];
       if (!items.length) return 0;
       const done = items.filter(i => i.completed).length;
       return Math.round((done / items.length) * 100);
     } catch(e) { return 0; }
   }
 
-  function getTotalBudget(tripId) {
+  function getTotalSpent(tripId) {
     try {
-      const expenses = Storage.get('expenses_' + tripId, []);
-      const items = Storage.get('itinerary_' + tripId, []);
+      const expenses = getCachedExpenses(tripId) || [];
+      const items = getCachedItems(tripId) || [];
       const expTotal = expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
       const itemTotal = items.reduce((s, i) => s + (Number(i.actualCost) || 0), 0);
       return expTotal + itemTotal;
     } catch(e) { return 0; }
   }
 
-  function render() {
+  function renderTripCards(trips) {
     try {
       const container = document.getElementById('trips-list');
       if (!container) return;
-      const trips = getAll();
 
-      if (!trips.length) {
+      if (!trips || !trips.length) {
         container.innerHTML = `
           <div class="empty-state">
             <div class="empty-icon">${icon('suitcase',56,1.25)}</div>
@@ -75,14 +55,22 @@ const TripsModule = (() => {
       container.innerHTML = trips.map(trip => {
         const days = calcDays(trip.startDate, trip.endDate);
         const progress = getProgress(trip.id);
-        const spent = getTotalBudget(trip.id);
-        const coverStyle = trip.coverImage
-          ? `background-image: url('${trip.coverImage}'); background-size: cover; background-position: center;`
+        const spent = getTotalSpent(trip.id);
+        const coverImg = LocalStorage.getCover(trip.id);
+        const coverStyle = coverImg
+          ? `background-image: url('${coverImg}'); background-size: cover; background-position: center;`
           : `background: ${getCountryGradient(trip.country || trip.name)};`;
+
+        const members = trip.members || [];
+        const memberBadge = members.length > 1
+          ? `<div class="trip-member-badge">${icon('users',12,2)} ${members.length}</div>`
+          : '';
 
         return `
           <div class="trip-card" data-id="${trip.id}">
             <div class="trip-cover" style="${coverStyle}">
+              ${memberBadge}
+              <button class="trip-share-btn icon-btn" data-id="${trip.id}" title="分享">${icon('share',16,2)}</button>
               <div class="trip-cover-overlay">
                 <h2 class="trip-name">${escapeHtml(trip.name)}</h2>
                 <p class="trip-location">${escapeHtml(trip.country)} · ${escapeHtml(trip.city)}</p>
@@ -90,7 +78,7 @@ const TripsModule = (() => {
             </div>
             <div class="trip-body">
               <div class="trip-meta">
-                <span class="trip-dates">${icon('calendar',13,2)} ${formatDateShort(trip.startDate)} ~ ${formatDateShort(trip.endDate)} ${trip.startDate.split('-')[0]}</span>
+                <span class="trip-dates">${icon('calendar',13,2)} ${formatDateShort(trip.startDate)} ~ ${formatDateShort(trip.endDate)} ${(trip.startDate||'').split('-')[0]}</span>
                 <span class="trip-days">${days} 天</span>
               </div>
               <div class="trip-stats">
@@ -104,20 +92,77 @@ const TripsModule = (() => {
           </div>`;
       }).join('');
 
-      // bind card clicks
+      // bind card clicks (not share btn)
       container.querySelectorAll('.trip-card').forEach(card => {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', e => {
+          if (e.target.closest('.trip-share-btn')) return;
           const id = card.dataset.id;
-          App.setCurrentTrip(id);
-          App.navigate('itinerary');
+          setCurrentTripId(id);
+          navigate('itinerary');
+        });
+      });
+
+      // bind share buttons
+      container.querySelectorAll('.trip-share-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          openShareSheet(btn.dataset.id);
         });
       });
     } catch(e) {}
   }
 
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  function render() {
+    try {
+      const container = document.getElementById('trips-list');
+      if (!container) return;
+
+      // Show skeleton if no data yet
+      const cached = getCachedTrips();
+      if (!cached) {
+        container.innerHTML = `
+          <div class="skeleton-list">
+            <div class="skeleton-card"></div>
+            <div class="skeleton-card"></div>
+          </div>`;
+      } else {
+        renderTripCards(cached);
+      }
+
+      // Start subscription if not yet started
+      if (!_unsubTrips) {
+        _unsubTrips = subscribeTrips(trips => {
+          renderTripCards(trips);
+        });
+      }
+    } catch(e) {}
+  }
+
+  function openShareSheet(tripId) {
+    try {
+      const trip = getCachedTrip(tripId);
+      if (!trip) return;
+      _shareCurrentTripId = tripId;
+
+      const codeEl = document.getElementById('invite-code-text');
+      if (codeEl) codeEl.textContent = trip.inviteCode || '—';
+
+      const membersEl = document.getElementById('share-members-list');
+      if (membersEl) {
+        const members     = trip.members || [];
+        const memberNames = trip.memberNames || {};
+        const currentUid  = getCurrentUser()?.uid;
+        membersEl.innerHTML = members.length
+          ? members.map(uid => {
+              const name = memberNames[uid] || '旅伴';
+              const isMe = uid === currentUid ? '（你）' : '';
+              return `<span class="share-member-chip">${icon('user',14,2)} ${escapeHtml(name)}${isMe}</span>`;
+            }).join('')
+          : '<span style="color:var(--text-secondary)">僅你一人</span>';
+      }
+
+      openBottomSheet('share-sheet');
+    } catch(e) {}
   }
 
   function openForm(tripId = null) {
@@ -128,8 +173,10 @@ const TripsModule = (() => {
 
       form.reset();
       document.getElementById('trip-form-id').value = '';
+      const preview = document.getElementById('trip-cover-preview');
+
       if (tripId) {
-        const trip = getById(tripId);
+        const trip = getCachedTrip(tripId);
         if (!trip) return;
         titleEl.textContent = '編輯旅程';
         document.getElementById('trip-form-id').value = trip.id;
@@ -139,17 +186,22 @@ const TripsModule = (() => {
         document.getElementById('trip-start-input').value = trip.startDate || '';
         document.getElementById('trip-end-input').value = trip.endDate || '';
         document.getElementById('trip-notes-input').value = trip.notes || '';
-        document.getElementById('trip-cover-preview').style.display = trip.coverImage ? 'block' : 'none';
-        if (trip.coverImage) document.getElementById('trip-cover-preview').src = trip.coverImage;
+        const cover = LocalStorage.getCover(trip.id);
+        if (cover && preview) {
+          preview.src = cover;
+          preview.style.display = 'block';
+        } else if (preview) {
+          preview.style.display = 'none';
+        }
       } else {
         titleEl.textContent = '新增旅程';
-        document.getElementById('trip-cover-preview').style.display = 'none';
+        if (preview) preview.style.display = 'none';
       }
       openBottomSheet('trip-sheet');
     } catch(e) {}
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     try {
       e.preventDefault();
       const id = document.getElementById('trip-form-id').value;
@@ -164,27 +216,31 @@ const TripsModule = (() => {
       if (!startDate || !endDate) { showToast('請選擇日期', 'error'); return; }
       if (endDate < startDate) { showToast('回程日期不能早於出發日期', 'error'); return; }
 
+      const preview = document.getElementById('trip-cover-preview');
+      const hasCover = preview && preview.style.display !== 'none' && preview.src;
+
       const tripData = {
-        id: id || generateId(),
         name, country, city, startDate, endDate, notes,
-        coverImage: document.getElementById('trip-cover-preview').style.display !== 'none'
-          ? document.getElementById('trip-cover-preview').src
-          : null,
-        createdAt: id ? (getById(id)||{}).createdAt || new Date().toISOString() : new Date().toISOString(),
       };
 
-      if (save(tripData)) {
-        // init checklist for new trip
-        if (!id) {
-          ChecklistModule.initDefaults(tripData.id);
-        }
+      if (id) {
+        // editing existing
+        await updateTrip(id, tripData);
+        if (hasCover) LocalStorage.setCover(id, preview.src);
         closeBottomSheet('trip-sheet');
-        render();
-        showToast(id ? '旅程已更新' : '旅程已建立');
+        showToast('旅程已更新');
       } else {
-        showToast('儲存失敗', 'error');
+        // create new
+        const newId = await createTrip(tripData);
+        if (hasCover) LocalStorage.setCover(newId, preview.src);
+        // init checklist defaults for new trip
+        await ChecklistModule.initDefaults(newId);
+        closeBottomSheet('trip-sheet');
+        showToast('旅程已建立');
       }
-    } catch(e) { showToast('發生錯誤', 'error'); }
+    } catch(err) {
+      showToast('儲存失敗：' + (err.message || '發生錯誤'), 'error');
+    }
   }
 
   function init() {
@@ -210,8 +266,14 @@ const TripsModule = (() => {
 
       document.getElementById('add-trip-btn')?.addEventListener('click', () => openForm());
       document.getElementById('trip-sheet-close')?.addEventListener('click', () => closeBottomSheet('trip-sheet'));
+
+      // share sheet close
+      document.getElementById('share-sheet-close')?.addEventListener('click', () => closeBottomSheet('share-sheet'));
     } catch(e) {}
   }
 
-  return { init, render, getAll, getById, save, remove, openForm, getProgress, getTotalBudget };
+  // Expose _shareCurrentTripId for app.js share sheet wiring
+  const publicAPI = { init, render, getById, getProgress, getTotalSpent, openForm, openShareSheet };
+  Object.defineProperty(publicAPI, '_shareCurrentTripId', { get: () => _shareCurrentTripId });
+  return publicAPI;
 })();

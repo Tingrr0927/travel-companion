@@ -1,6 +1,10 @@
-/* itinerary.js — daily itinerary module */
+/* itinerary.js — daily itinerary module (Firestore-backed ES module) */
 
-const ItineraryModule = (() => {
+import { subscribeItems, createItem, updateItem, deleteItem as firestoreDeleteItem, batchUpdateItemOrder, getCachedItems, getCachedTrip } from './storage.js';
+import { getCurrentUser, getDisplayName } from './auth.js';
+import { getCurrentTripId } from './state.js';
+
+export const ItineraryModule = (() => {
   const TYPE_META = {
     attraction: { label: '景點', icon: () => icon('landmark', 18), color: '#4F7EFF' },
     restaurant:  { label: '餐廳', icon: () => icon('coffee', 18),   color: '#FF7043' },
@@ -13,18 +17,27 @@ const ItineraryModule = (() => {
   let currentDay = null;
   let sortableInstances = [];
   let longPressTimer = null;
+  let _subTripId = null;
+  let _unsubscribe = null;
+  let _cache = [];
 
   function escapeHtml(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function getItems(tripId) {
-    return Storage.get('itinerary_' + tripId, []);
+  function timeAgo(ts) {
+    if (!ts) return '';
+    const ms = ts.toMillis ? ts.toMillis() : Number(ts);
+    const diff = Date.now() - ms;
+    if (diff < 60000) return '剛剛';
+    if (diff < 3600000) return Math.floor(diff/60000) + '分鐘前';
+    if (diff < 86400000) return Math.floor(diff/3600000) + '小時前';
+    return Math.floor(diff/86400000) + '天前';
   }
 
-  function saveItems(tripId, items) {
-    return Storage.set('itinerary_' + tripId, items);
+  function getItems(tripId) {
+    return getCachedItems(tripId) || [];
   }
 
   function getItemsByDay(tripId, date) {
@@ -50,11 +63,24 @@ const ItineraryModule = (() => {
     return conflicts;
   }
 
+  function subscribeToTrip(tripId) {
+    if (_subTripId === tripId) return;
+    if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+    _subTripId = tripId;
+    if (!tripId) return;
+
+    _unsubscribe = subscribeItems(tripId, items => {
+      _cache = items || [];
+      renderDayTabs();
+      renderItems();
+    });
+  }
+
   function renderDayTabs() {
     try {
-      const tripId = App.getCurrentTripId();
+      const tripId = getCurrentTripId();
       if (!tripId) return;
-      const trip = TripsModule.getById(tripId);
+      const trip = getCachedTrip(tripId);
       if (!trip) return;
 
       const dates = getDatesInRange(trip.startDate, trip.endDate);
@@ -87,7 +113,7 @@ const ItineraryModule = (() => {
 
   function renderItems() {
     try {
-      const tripId = App.getCurrentTripId();
+      const tripId = getCurrentTripId();
       if (!tripId || !currentDay) return;
 
       const container = document.getElementById('itinerary-items');
@@ -116,6 +142,9 @@ const ItineraryModule = (() => {
       items.forEach(item => {
         const meta = TYPE_META[item.type] || TYPE_META.other;
         const conflict = conflicts[item.id];
+        const lastEditInfo = item.lastEditName
+          ? `<div class="item-last-edit">最後由 ${escapeHtml(item.lastEditName)} 編輯 · ${timeAgo(item.updatedAt)}</div>`
+          : '';
         const li = document.createElement('li');
         li.className = 'item-card';
         li.dataset.id = item.id;
@@ -134,6 +163,7 @@ const ItineraryModule = (() => {
             ${item.address ? `<div class="item-addr clickable" data-addr="${escapeHtml(item.address)}" data-maps="${escapeHtml(item.mapsUrl||'')}">${icon('pin',13,2)} ${escapeHtml(item.address)}</div>` : ''}
             ${item.estimatedCost ? `<div class="item-cost">預估：${formatMoney(item.estimatedCost)}${item.actualCost != null ? '　實際：' + formatMoney(item.actualCost) : ''}</div>` : ''}
             ${item.notes ? `<div class="item-notes">${escapeHtml(item.notes)}</div>` : ''}
+            ${lastEditInfo}
           </div>
           <div class="item-actions">
             <button class="icon-btn edit-item-btn" data-id="${item.id}" title="編輯">${ICONS.edit}</button>
@@ -159,7 +189,7 @@ const ItineraryModule = (() => {
         btn.addEventListener('click', async e => {
           e.stopPropagation();
           if (await showConfirm('確定要刪除這個行程嗎？')) {
-            deleteItem(tripId, btn.dataset.id);
+            await removeItem(tripId, btn.dataset.id);
           }
         });
       });
@@ -177,7 +207,7 @@ const ItineraryModule = (() => {
         btn.addEventListener('click', async e => {
           e.stopPropagation();
           if (await showConfirm('確定要刪除這個行程嗎？')) {
-            deleteItem(tripId, btn.dataset.id);
+            await removeItem(tripId, btn.dataset.id);
           }
         });
       });
@@ -221,7 +251,7 @@ const ItineraryModule = (() => {
 
   function initLongPress(card, tripId) {
     try {
-      card.addEventListener('touchstart', e => {
+      card.addEventListener('touchstart', () => {
         longPressTimer = setTimeout(() => {
           showContextMenu(card, tripId);
         }, 600);
@@ -255,7 +285,7 @@ const ItineraryModule = (() => {
       });
       menu.querySelector('[data-action=delete]').addEventListener('click', async () => {
         menu.remove();
-        if (await showConfirm('確定要刪除這個行程嗎？')) deleteItem(tripId, itemId);
+        if (await showConfirm('確定要刪除這個行程嗎？')) await removeItem(tripId, itemId);
       });
 
       setTimeout(() => {
@@ -266,7 +296,7 @@ const ItineraryModule = (() => {
 
   function openMoveDialog(tripId, itemId) {
     try {
-      const trip = TripsModule.getById(tripId);
+      const trip = getCachedTrip(tripId);
       if (!trip) return;
       const dates = getDatesInRange(trip.startDate, trip.endDate);
       const opts = dates.map((d, i) => `<option value="${d}" ${d === currentDay ? 'selected' : ''}>Day ${i+1} (${formatDateShort(d)})</option>`).join('');
@@ -284,54 +314,43 @@ const ItineraryModule = (() => {
         </div>`;
       document.body.appendChild(overlay);
 
-      overlay.querySelector('#move-ok').addEventListener('click', () => {
+      overlay.querySelector('#move-ok').addEventListener('click', async () => {
         const newDate = overlay.querySelector('#move-date-select').value;
         overlay.remove();
-        const items = getItems(tripId);
-        const idx = items.findIndex(i => i.id === itemId);
-        if (idx >= 0) {
-          items[idx].date = newDate;
-          saveItems(tripId, items);
-          renderItems();
+        try {
+          await updateItem(tripId, itemId, { date: newDate });
           showToast('行程已移動');
+        } catch(err) {
+          showToast('移動失敗', 'error');
         }
       });
       overlay.querySelector('#move-cancel').addEventListener('click', () => overlay.remove());
     } catch(e) {}
   }
 
-  function toggleComplete(tripId, itemId, done) {
+  async function toggleComplete(tripId, itemId, done) {
     try {
-      const items = getItems(tripId);
-      const idx = items.findIndex(i => i.id === itemId);
-      if (idx >= 0) {
-        items[idx].completed = done;
-        saveItems(tripId, items);
-        renderItems();
-      }
-    } catch(e) {}
+      await updateItem(tripId, itemId, { completed: done });
+    } catch(e) {
+      showToast('更新失敗', 'error');
+    }
   }
 
-  function deleteItem(tripId, itemId) {
+  async function removeItem(tripId, itemId) {
     try {
-      const items = getItems(tripId).filter(i => i.id !== itemId);
-      saveItems(tripId, items);
-      renderItems();
+      await firestoreDeleteItem(tripId, itemId);
       showToast('行程已刪除');
-    } catch(e) {}
+    } catch(e) {
+      showToast('刪除失敗', 'error');
+    }
   }
 
-  function updateOrder(tripId) {
+  async function updateOrder(tripId) {
     try {
       const list = document.getElementById('sortable-list');
       if (!list) return;
-      const ids = [...list.querySelectorAll('.item-card')].map(c => c.dataset.id);
-      const items = getItems(tripId);
-      ids.forEach((id, idx) => {
-        const item = items.find(i => i.id === id);
-        if (item) item.order = idx;
-      });
-      saveItems(tripId, items);
+      const orderedIds = [...list.querySelectorAll('.item-card')].map(c => c.dataset.id);
+      await batchUpdateItemOrder(tripId, orderedIds);
     } catch(e) {}
   }
 
@@ -357,7 +376,7 @@ const ItineraryModule = (() => {
         document.getElementById('item-maps-input').value = item.mapsUrl || '';
         document.getElementById('item-notes-input').value = item.notes || '';
         document.getElementById('item-est-cost').value = item.estimatedCost || '';
-        document.getElementById('item-actual-cost').value = item.actualCost || '';
+        document.getElementById('item-actual-cost').value = item.actualCost != null ? item.actualCost : '';
         document.getElementById('item-planb-input').value = item.planB || '';
         document.getElementById('item-completed-cb').checked = item.completed || false;
       }
@@ -365,18 +384,20 @@ const ItineraryModule = (() => {
     } catch(e) {}
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     try {
       e.preventDefault();
-      const tripId = App.getCurrentTripId();
+      const tripId = getCurrentTripId();
       if (!tripId) return;
 
       const id = document.getElementById('item-form-id').value;
       const name = document.getElementById('item-name-input').value.trim();
       if (!name) { showToast('請輸入行程名稱', 'error'); return; }
 
+      const user = getCurrentUser();
+      const displayName = getDisplayName();
+
       const itemData = {
-        id: id || generateId(),
         tripId,
         date: currentDay,
         type: document.getElementById('item-type-input').value,
@@ -391,37 +412,35 @@ const ItineraryModule = (() => {
           ? Number(document.getElementById('item-actual-cost').value) : null,
         planB: document.getElementById('item-planb-input').value.trim(),
         completed: document.getElementById('item-completed-cb').checked,
-        order: 0,
-        createdAt: new Date().toISOString(),
+        lastEditName: displayName || (user && user.email) || null,
       };
 
-      const items = getItems(tripId);
-      const existing = items.findIndex(i => i.id === itemData.id);
-      if (existing >= 0) {
-        itemData.order = items[existing].order;
-        items[existing] = itemData;
+      if (id) {
+        await updateItem(tripId, id, itemData);
+        closeBottomSheet('item-sheet');
+        showToast('行程已更新');
       } else {
-        const dayItems = items.filter(i => i.date === currentDay);
+        const existingItems = getItems(tripId);
+        const dayItems = existingItems.filter(i => i.date === currentDay);
         itemData.order = dayItems.length;
-        items.push(itemData);
+        await createItem(tripId, itemData);
+        closeBottomSheet('item-sheet');
+        showToast('行程已新增');
       }
-
-      saveItems(tripId, items);
-      closeBottomSheet('item-sheet');
-      renderItems();
-      showToast(id ? '行程已更新' : '行程已新增');
-    } catch(e) { showToast('發生錯誤', 'error'); }
+    } catch(err) {
+      showToast('發生錯誤：' + (err.message || ''), 'error');
+    }
   }
 
-  function render() {
+  function render(tripId) {
     try {
-      const tripId = App.getCurrentTripId();
+      const tid = tripId || getCurrentTripId();
       const noTrip = document.getElementById('itinerary-no-trip');
       const dayTabsWrap = document.getElementById('day-tabs-wrap');
       const itemsEl = document.getElementById('itinerary-items');
       const fabEl = document.getElementById('add-item-btn');
 
-      if (!tripId) {
+      if (!tid) {
         if (noTrip) noTrip.style.display = 'flex';
         if (dayTabsWrap) dayTabsWrap.style.display = 'none';
         if (itemsEl) itemsEl.innerHTML = '';
@@ -431,8 +450,16 @@ const ItineraryModule = (() => {
       if (noTrip) noTrip.style.display = 'none';
       if (dayTabsWrap) dayTabsWrap.style.display = 'block';
       if (fabEl) fabEl.style.display = 'flex';
+
+      // Show skeleton on first load if no cache
+      const cached = getCachedItems(tid);
+      if (!cached && itemsEl) {
+        itemsEl.innerHTML = `<div class="skeleton-list"><div class="skeleton-card"></div></div>`;
+      }
+
+      subscribeToTrip(tid);
       renderDayTabs();
-      renderItems();
+      if (cached) renderItems();
     } catch(e) {}
   }
 
@@ -441,7 +468,7 @@ const ItineraryModule = (() => {
       const form = document.getElementById('item-form');
       if (form) form.addEventListener('submit', handleSubmit);
       document.getElementById('add-item-btn')?.addEventListener('click', () => {
-        const tripId = App.getCurrentTripId();
+        const tripId = getCurrentTripId();
         if (!tripId) { showToast('請先選擇或建立旅程', 'error'); return; }
         openForm(tripId);
       });

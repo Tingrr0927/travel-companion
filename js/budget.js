@@ -1,21 +1,32 @@
-/* budget.js — budget management module */
+/* budget.js — budget management module (Firestore-backed ES module) */
 
-const BudgetModule = (() => {
+import {
+  subscribeExpenses, subscribeBudgetLimit,
+  createExpense, deleteExpense,
+  saveBudgetLimit,
+  getCachedExpenses, getCachedItems, getCachedBudgetLimit,
+} from './storage.js';
+import { getCurrentTripId } from './state.js';
+
+export const BudgetModule = (() => {
   const CATEGORIES = [
-    { id: 'flight',     label: '機票',     icon: () => icon('plane', 22)       },
-    { id: 'hotel',      label: '住宿',     icon: () => icon('bed', 22)         },
-    { id: 'transport',  label: '交通',     icon: () => icon('bus', 22)         },
-    { id: 'food',       label: '餐飲',     icon: () => icon('utensils', 22)    },
-    { id: 'attraction', label: '景點門票', icon: () => icon('tag', 22)         },
-    { id: 'shopping',   label: '購物',     icon: () => icon('shoppingBag', 22) },
-    { id: 'other',      label: '其他',     icon: () => icon('archive', 22)     },
+    { id: 'flight',     label: '機票',     icon: () => icon('plane', 22)        },
+    { id: 'hotel',      label: '住宿',     icon: () => icon('bed', 22)          },
+    { id: 'transport',  label: '交通',     icon: () => icon('bus', 22)          },
+    { id: 'food',       label: '餐飲',     icon: () => icon('utensils', 22)     },
+    { id: 'attraction', label: '景點門票', icon: () => icon('tag', 22)          },
+    { id: 'shopping',   label: '購物',     icon: () => icon('shoppingBag', 22)  },
+    { id: 'other',      label: '其他',     icon: () => icon('archive', 22)      },
   ];
 
   const ITEM_TYPE_TO_CAT = {
     attraction: 'attraction', restaurant: 'food', hotel: 'hotel',
-    transport: 'transport', shopping: 'shopping', other: 'other',
+    transport: 'transport',   shopping: 'shopping', other: 'other',
   };
 
+  let _subTripId   = null;
+  let _unsubExp    = null;
+  let _unsubLimit  = null;
   let chartInstance = null;
 
   function escapeHtml(s) {
@@ -23,86 +34,73 @@ const BudgetModule = (() => {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function getExpenses(tripId) {
-    return Storage.get('expenses_' + tripId, []);
+  // ── subscription management ─────────────────────────────────────────────────
+
+  function subscribeToTrip(tripId) {
+    if (_subTripId === tripId) return;
+    if (_unsubExp)   { _unsubExp();   _unsubExp   = null; }
+    if (_unsubLimit) { _unsubLimit(); _unsubLimit = null; }
+    _subTripId = tripId;
+    if (!tripId) return;
+
+    _unsubExp = subscribeExpenses(tripId, () => {
+      renderOverview(tripId);
+      renderChart(tripId);
+      renderExpenseList(tripId);
+    });
+
+    _unsubLimit = subscribeBudgetLimit(tripId, () => {
+      renderOverview(tripId);
+    });
   }
 
-  function saveExpenses(tripId, expenses) {
-    Storage.set('expenses_' + tripId, expenses);
-  }
-
-  function getBudgetLimit(tripId) {
-    return Storage.get('budget_limit_' + tripId, 0);
-  }
-
-  function setBudgetLimit(tripId, amount) {
-    Storage.set('budget_limit_' + tripId, amount);
-  }
+  // ── helpers ─────────────────────────────────────────────────────────────────
 
   function calcTotals(tripId) {
-    const expenses = getExpenses(tripId);
-    const itineraryItems = Storage.get('itinerary_' + tripId, []);
-
+    const expenses = getCachedExpenses(tripId);
+    const items    = getCachedItems(tripId);
     const byCategory = {};
     CATEGORIES.forEach(c => { byCategory[c.id] = 0; });
 
     expenses.forEach(e => {
       byCategory[e.category] = (byCategory[e.category] || 0) + (Number(e.amount) || 0);
     });
-
-    itineraryItems.forEach(item => {
+    items.forEach(item => {
       if (item.actualCost != null) {
         const cat = ITEM_TYPE_TO_CAT[item.type] || 'other';
         byCategory[cat] = (byCategory[cat] || 0) + (Number(item.actualCost) || 0);
       }
     });
-
     const total = Object.values(byCategory).reduce((s, v) => s + v, 0);
     return { byCategory, total };
   }
 
-  function render() {
-    try {
-      const tripId = App.getCurrentTripId();
-      const fallback = document.getElementById('budget-content');
-      if (!tripId) {
-        renderNoTrip();
-        // hide proper sections
-        document.getElementById('budget-overview') && (document.getElementById('budget-overview').innerHTML = '');
-        document.getElementById('expense-list') && (document.getElementById('expense-list').innerHTML = '');
-        document.querySelector('.chart-card canvas') && (document.getElementById('budget-chart').parentElement.innerHTML = '<canvas id="budget-chart"></canvas>');
-        if (fallback) fallback.style.display = 'block';
-        return;
-      }
-      if (fallback) { fallback.style.display = 'none'; fallback.innerHTML = ''; }
-      renderOverview(tripId);
-      renderChart(tripId);
-      renderExpenseList(tripId);
-      renderSplitCalc();
-    } catch(e) {}
-  }
+  // ── render sections ─────────────────────────────────────────────────────────
 
   function renderNoTrip() {
     try {
-      const el = document.getElementById('budget-content');
-      if (el) el.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">${icon('creditCard',56,1.25)}</div>
-          <h3>請先選擇旅程</h3>
-          <p>在 Trips 頁面選擇或建立旅程後再查看預算</p>
-        </div>`;
+      const fb = document.getElementById('budget-content');
+      if (fb) {
+        fb.style.display = 'block';
+        fb.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">${icon('creditCard',56,1.25)}</div>
+            <h3>請先選擇旅程</h3>
+            <p>在 Trips 頁面選擇或建立旅程後再查看預算</p>
+          </div>`;
+      }
     } catch(e) {}
   }
 
   function renderOverview(tripId) {
     try {
       const { total } = calcTotals(tripId);
-      const limit = getBudgetLimit(tripId);
+      const limit     = getCachedBudgetLimit(tripId);
       const remaining = limit > 0 ? limit - total : null;
-      const pct = limit > 0 ? Math.min(100, Math.round((total / limit) * 100)) : 0;
-
+      const pct       = limit > 0 ? Math.min(100, Math.round((total / limit) * 100)) : 0;
       const el = document.getElementById('budget-overview');
       if (!el) return;
+
       el.innerHTML = `
         <div class="budget-card">
           <div class="budget-row">
@@ -122,7 +120,7 @@ const BudgetModule = (() => {
             ${remaining !== null ? `
             <div class="budget-stat">
               <span class="budget-label">剩餘</span>
-              <span class="budget-value ${remaining < 0 ? 'danger' : 'success'}">${formatMoney(Math.abs(remaining))}${remaining < 0 ? ' (超支)' : ''}</span>
+              <span class="budget-value ${remaining < 0 ? 'danger' : 'success'}">${formatMoney(Math.abs(remaining))}${remaining < 0 ? '（超支）' : ''}</span>
             </div>` : ''}
           </div>
           ${limit > 0 ? `
@@ -138,7 +136,7 @@ const BudgetModule = (() => {
 
   function openSetBudget(tripId) {
     try {
-      const current = getBudgetLimit(tripId);
+      const current = getCachedBudgetLimit(tripId);
       const overlay = document.createElement('div');
       overlay.className = 'confirm-overlay';
       overlay.innerHTML = `
@@ -152,12 +150,14 @@ const BudgetModule = (() => {
           </div>
         </div>`;
       document.body.appendChild(overlay);
-      overlay.querySelector('#budget-save').addEventListener('click', () => {
-        const val = Number(overlay.querySelector('#budget-limit-input').value) || 0;
-        setBudgetLimit(tripId, val);
-        overlay.remove();
-        render();
-        showToast('預算已設定');
+
+      overlay.querySelector('#budget-save').addEventListener('click', async () => {
+        try {
+          const val = Number(overlay.querySelector('#budget-limit-input').value) || 0;
+          overlay.remove();
+          await saveBudgetLimit(tripId, val);
+          showToast('預算已設定');
+        } catch(e) { showToast('儲存失敗', 'error'); }
       });
       overlay.querySelector('#budget-cancel').addEventListener('click', () => overlay.remove());
     } catch(e) {}
@@ -190,8 +190,7 @@ const BudgetModule = (() => {
         type: 'doughnut',
         data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] },
         options: {
-          responsive: true, maintainAspectRatio: false,
-          cutout: '65%',
+          responsive: true, maintainAspectRatio: false, cutout: '65%',
           plugins: {
             legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 12 } },
             tooltip: {
@@ -207,7 +206,7 @@ const BudgetModule = (() => {
 
   function renderExpenseList(tripId) {
     try {
-      const expenses = getExpenses(tripId);
+      const expenses = getCachedExpenses(tripId);
       const el = document.getElementById('expense-list');
       if (!el) return;
 
@@ -234,66 +233,67 @@ const BudgetModule = (() => {
         btn.addEventListener('click', async e => {
           e.stopPropagation();
           if (await showConfirm('確定要刪除這筆支出嗎？')) {
-            const updated = getExpenses(tripId).filter(x => x.id !== btn.dataset.id);
-            saveExpenses(tripId, updated);
-            render();
-            showToast('已刪除');
+            try {
+              await deleteExpense(tripId, btn.dataset.id);
+              showToast('已刪除');
+            } catch(e) { showToast('刪除失敗', 'error'); }
           }
         });
       });
     } catch(e) {}
   }
 
-  function renderSplitCalc() {
+  // ── public render ────────────────────────────────────────────────────────────
+
+  function render(tripId) {
     try {
-      const el = document.getElementById('split-result');
-      if (el) el.innerHTML = '';
+      const fallback = document.getElementById('budget-content');
+      if (!tripId) {
+        renderNoTrip();
+        if (document.getElementById('budget-overview')) document.getElementById('budget-overview').innerHTML = '';
+        if (document.getElementById('expense-list')) document.getElementById('expense-list').innerHTML = '';
+        return;
+      }
+      if (fallback) { fallback.style.display = 'none'; fallback.innerHTML = ''; }
+      subscribeToTrip(tripId);
+      renderOverview(tripId);
+      renderChart(tripId);
+      renderExpenseList(tripId);
     } catch(e) {}
   }
 
-  function openExpenseForm(tripId) {
-    try {
-      const form = document.getElementById('expense-form');
-      if (!form) return;
-      form.reset();
-      openBottomSheet('expense-sheet');
-    } catch(e) {}
-  }
+  // ── expense form ─────────────────────────────────────────────────────────────
 
-  function handleExpenseSubmit(e) {
+  async function handleExpenseSubmit(e) {
     try {
       e.preventDefault();
-      const tripId = App.getCurrentTripId();
+      const tripId = getCurrentTripId();
       if (!tripId) return;
 
-      const cat = document.getElementById('expense-cat').value;
-      const desc = document.getElementById('expense-desc').value.trim();
-      const amount = Number(document.getElementById('expense-amount').value);
-      const date = document.getElementById('expense-date').value;
-      const paidBy = document.getElementById('expense-paidby').value.trim();
+      const cat     = document.getElementById('expense-cat').value;
+      const desc    = document.getElementById('expense-desc').value.trim();
+      const amount  = Number(document.getElementById('expense-amount').value);
+      const date    = document.getElementById('expense-date').value;
+      const paidBy  = document.getElementById('expense-paidby').value.trim();
 
       if (!desc || !amount) { showToast('請填寫說明和金額', 'error'); return; }
 
-      const expense = { id: generateId(), tripId, category: cat, description: desc, amount, date, paidBy, createdAt: new Date().toISOString() };
-      const expenses = getExpenses(tripId);
-      expenses.unshift(expense);
-      saveExpenses(tripId, expenses);
+      await createExpense(tripId, { category: cat, description: desc, amount, date, paidBy });
       closeBottomSheet('expense-sheet');
-      render();
       showToast('支出已新增');
-    } catch(e) { showToast('發生錯誤', 'error'); }
+    } catch(e) { showToast('新增失敗：' + (e.message || ''), 'error'); }
   }
 
   function handleSplitCalc() {
     try {
-      const amount = Number(document.getElementById('split-amount').value) || 0;
-      const count = Number(document.getElementById('split-count').value) || 1;
-      const paidBy = document.getElementById('split-paidby').value.trim() || '付款人';
-      const per = Math.ceil(amount / count);
+      const amount  = Number(document.getElementById('split-amount').value) || 0;
+      const count   = Math.max(1, Number(document.getElementById('split-count').value) || 1);
+      const paidBy  = document.getElementById('split-paidby').value.trim() || '付款人';
+      const per     = Math.ceil(amount / count);
       const el = document.getElementById('split-result');
       if (el) el.innerHTML = `
         <div class="split-card">
-          <p><strong>${paidBy}</strong> 付了 <strong>${formatMoney(amount)}</strong></p>
+          <p><strong>${escapeHtml(paidBy)}</strong> 付了 <strong>${formatMoney(amount)}</strong></p>
           <p>共 <strong>${count}</strong> 人，每人應付 <strong class="primary">${formatMoney(per)}</strong></p>
         </div>`;
     } catch(e) {}
@@ -303,15 +303,15 @@ const BudgetModule = (() => {
     try {
       const expForm = document.getElementById('expense-form');
       if (expForm) expForm.addEventListener('submit', handleExpenseSubmit);
+
       document.getElementById('add-expense-btn')?.addEventListener('click', () => {
-        const tripId = App.getCurrentTripId();
+        const tripId = getCurrentTripId();
         if (!tripId) { showToast('請先選擇旅程', 'error'); return; }
-        // set default date to today
-        const today = new Date().toISOString().split('T')[0];
         const dateEl = document.getElementById('expense-date');
-        if (dateEl) dateEl.value = today;
-        openExpenseForm(tripId);
+        if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
+        openBottomSheet('expense-sheet');
       });
+
       document.getElementById('expense-sheet-close')?.addEventListener('click', () => closeBottomSheet('expense-sheet'));
       document.getElementById('calc-split-btn')?.addEventListener('click', handleSplitCalc);
     } catch(e) {}

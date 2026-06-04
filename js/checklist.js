@@ -1,54 +1,47 @@
-/* checklist.js — packing checklist module */
+/* checklist.js — packing checklist module (Firestore-backed ES module) */
 
-const ChecklistModule = (() => {
+import {
+  subscribeChecklist, saveChecklist, getCachedChecklist,
+} from './storage.js';
+import { getCurrentTripId } from './state.js';
+
+export const ChecklistModule = (() => {
   const DEFAULTS = [
     { group: '出國必帶', items: ['護照','機票（電子機票截圖）','信用卡','現金（換好外幣）','網卡 / eSIM','充電器','行動電源','轉接頭','保險卡'] },
     { group: '個人用品', items: ['換洗衣物','盥洗用品','藥品','太陽眼鏡','雨傘'] },
   ];
+
+  let _subTripId   = null;
+  let _unsubscribe = null;
 
   function escapeHtml(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  function getData(tripId) {
-    return Storage.get('checklist_' + tripId, null);
+  function subscribeToTrip(tripId, onData) {
+    if (_subTripId === tripId) return;
+    if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+    _subTripId = tripId;
+    if (!tripId) return;
+    _unsubscribe = subscribeChecklist(tripId, onData);
   }
 
-  function saveData(tripId, data) {
-    Storage.set('checklist_' + tripId, data);
-  }
-
-  function initDefaults(tripId) {
+  function renderUI(tripId) {
     try {
-      if (getData(tripId)) return;
-      const data = DEFAULTS.map(g => ({
-        group: g.group,
-        items: g.items.map(name => ({ id: generateId(), name, checked: false })),
-      }));
-      saveData(tripId, data);
-    } catch(e) {}
-  }
-
-  function render() {
-    try {
-      const tripId = App.getCurrentTripId();
       const el = document.getElementById('checklist-content');
       if (!el) return;
 
-      if (!tripId) {
-        el.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('checkSquare',56,1.25)}</div><h3>請先選擇旅程</h3><p>在 Trips 頁面選擇旅程</p></div>`;
-        return;
-      }
+      const raw = getCachedChecklist(tripId);
+      const data = raw?.groups || null;
 
-      const data = getData(tripId) || [];
-      if (!data.length) {
+      if (!data || !data.length) {
         el.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('checkSquare',56,1.25)}</div><h3>清單是空的</h3><p>點擊右下角新增項目</p></div>`;
         return;
       }
 
       const total = data.reduce((s, g) => s + g.items.length, 0);
-      const done = data.reduce((s, g) => s + g.items.filter(i => i.checked).length, 0);
+      const done  = data.reduce((s, g) => s + g.items.filter(i => i.checked).length, 0);
 
       el.innerHTML = `
         <div class="checklist-header-bar">
@@ -76,11 +69,11 @@ const ChecklistModule = (() => {
           </div>`).join('')}`;
 
       el.querySelectorAll('.check-cb').forEach(cb => {
-        cb.addEventListener('change', e => {
+        cb.addEventListener('change', async e => {
           const gi = Number(e.target.dataset.gi), ii = Number(e.target.dataset.ii);
-          data[gi].items[ii].checked = e.target.checked;
-          saveData(tripId, data);
-          render();
+          const updated = JSON.parse(JSON.stringify(data));
+          updated[gi].items[ii].checked = e.target.checked;
+          try { await saveChecklist(tripId, updated); } catch(err) { showToast('儲存失敗', 'error'); }
         });
       });
 
@@ -89,18 +82,15 @@ const ChecklistModule = (() => {
           e.stopPropagation();
           if (await showConfirm('確定要刪除這個項目嗎？')) {
             const gi = Number(btn.dataset.gi), ii = Number(btn.dataset.ii);
-            data[gi].items.splice(ii, 1);
-            saveData(tripId, data);
-            render();
+            const updated = JSON.parse(JSON.stringify(data));
+            updated[gi].items.splice(ii, 1);
+            try { await saveChecklist(tripId, updated); showToast('已刪除'); } catch(err) { showToast('刪除失敗', 'error'); }
           }
         });
       });
 
       el.querySelectorAll('.add-group-item').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const gi = Number(btn.dataset.gi);
-          openAddItem(tripId, data, gi);
-        });
+        btn.addEventListener('click', () => openAddItem(tripId, JSON.parse(JSON.stringify(data)), Number(btn.dataset.gi)));
       });
     } catch(e) {}
   }
@@ -121,48 +111,76 @@ const ChecklistModule = (() => {
       document.body.appendChild(overlay);
       const input = overlay.querySelector('#new-check-item');
       input.focus();
-      overlay.querySelector('#ci-ok').addEventListener('click', () => {
+
+      const doAdd = async () => {
         const name = input.value.trim();
         if (!name) { showToast('請輸入項目名稱', 'error'); return; }
         data[gi].items.push({ id: generateId(), name, checked: false });
-        saveData(tripId, data);
-        overlay.remove();
-        render();
-        showToast('已新增');
-      });
+        try { await saveChecklist(tripId, data); overlay.remove(); showToast('已新增'); }
+        catch(e) { showToast('新增失敗', 'error'); }
+      };
+      overlay.querySelector('#ci-ok').addEventListener('click', doAdd);
       overlay.querySelector('#ci-cancel').addEventListener('click', () => overlay.remove());
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') overlay.querySelector('#ci-ok').click(); });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
     } catch(e) {}
   }
 
-  function addItemFromInput(tripId) {
+  async function addItemFromInput(tripId) {
     try {
       const input = document.getElementById('checklist-add-input');
-      const name = input?.value.trim();
+      const name  = input?.value.trim();
       if (!name) { showToast('請輸入項目名稱', 'error'); return; }
 
-      let data = getData(tripId) || [];
-      if (!data.length) {
-        data = [{ group: '自訂清單', items: [] }];
-      }
+      const raw = getCachedChecklist(tripId);
+      let data = raw?.groups ? JSON.parse(JSON.stringify(raw.groups)) : [];
+      if (!data.length) data = [{ group: '自訂清單', items: [] }];
       data[data.length - 1].items.push({ id: generateId(), name, checked: false });
-      saveData(tripId, data);
+
+      await saveChecklist(tripId, data);
       if (input) input.value = '';
-      render();
       showToast('已新增');
+    } catch(e) { showToast('新增失敗', 'error'); }
+  }
+
+  // ── public ───────────────────────────────────────────────────────────────────
+
+  async function initDefaults(tripId) {
+    try {
+      const existing = getCachedChecklist(tripId);
+      if (existing?.groups?.length) return;
+      const data = DEFAULTS.map(g => ({
+        group: g.group,
+        items: g.items.map(name => ({ id: generateId(), name, checked: false })),
+      }));
+      await saveChecklist(tripId, data);
+    } catch(e) {}
+  }
+
+  function render(tripId) {
+    try {
+      const el = document.getElementById('checklist-content');
+      if (!el) return;
+
+      if (!tripId) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('checkSquare',56,1.25)}</div><h3>請先選擇旅程</h3><p>在 Trips 頁面選擇旅程</p></div>`;
+        return;
+      }
+
+      subscribeToTrip(tripId, () => renderUI(tripId));
+      renderUI(tripId);
     } catch(e) {}
   }
 
   function init() {
     try {
       document.getElementById('checklist-add-btn')?.addEventListener('click', () => {
-        const tripId = App.getCurrentTripId();
+        const tripId = getCurrentTripId();
         if (!tripId) { showToast('請先選擇旅程', 'error'); return; }
         addItemFromInput(tripId);
       });
       document.getElementById('checklist-add-input')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
-          const tripId = App.getCurrentTripId();
+          const tripId = getCurrentTripId();
           if (tripId) addItemFromInput(tripId);
         }
       });
