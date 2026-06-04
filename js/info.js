@@ -212,7 +212,7 @@ const InfoModule = (() => {
       <div class="hotel-card">
         <div class="hotel-card-header">
           <span>住宿 ${i + 1}${h.name ? '：' + escapeHtml(h.name) : ''}</span>
-          <button class="icon-btn del-hotel-btn" data-idx="${i}">🗑️</button>
+          <button class="icon-btn del-hotel-btn" data-idx="${i}">${ICONS.trash}</button>
         </div>
         <form class="hotel-form info-form" data-idx="${i}">
           <div class="form-row">

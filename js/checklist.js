@@ -70,7 +70,7 @@ const ChecklistModule = (() => {
                     <input type="checkbox" class="check-cb" data-gi="${gi}" data-ii="${ii}" ${item.checked ? 'checked' : ''}>
                     <span class="check-name">${escapeHtml(item.name)}</span>
                   </label>
-                  <button class="icon-btn del-check-btn" data-gi="${gi}" data-ii="${ii}">🗑️</button>
+                  <button class="icon-btn del-check-btn" data-gi="${gi}" data-ii="${ii}">${ICONS.trash}</button>
                 </li>`).join('')}
             </ul>
           </div>`).join('')}`;

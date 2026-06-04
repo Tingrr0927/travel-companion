@@ -226,7 +226,7 @@ const BudgetModule = (() => {
               <span class="expense-meta">${cat.label} · ${exp.date || ''}</span>
             </div>
             <span class="expense-amount">${formatMoney(exp.amount)}</span>
-            <button class="icon-btn del-exp-btn" data-id="${exp.id}">🗑️</button>
+            <button class="icon-btn del-exp-btn" data-id="${exp.id}">${ICONS.trash}</button>
           </div>`;
       }).join('');
 

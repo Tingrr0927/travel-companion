@@ -136,8 +136,8 @@ const ItineraryModule = (() => {
             ${item.notes ? `<div class="item-notes">${escapeHtml(item.notes)}</div>` : ''}
           </div>
           <div class="item-actions">
-            <button class="icon-btn edit-item-btn" data-id="${item.id}" title="編輯">✏️</button>
-            <button class="icon-btn delete-item-btn" data-id="${item.id}" title="刪除">🗑️</button>
+            <button class="icon-btn edit-item-btn" data-id="${item.id}" title="編輯">${ICONS.edit}</button>
+            <button class="icon-btn delete-item-btn" data-id="${item.id}" title="刪除">${ICONS.trash}</button>
           </div>
           <div class="swipe-delete-btn" data-id="${item.id}">刪除</div>`;
         list.appendChild(li);
@@ -240,9 +240,9 @@ const ItineraryModule = (() => {
       const menu = document.createElement('div');
       menu.className = 'context-menu';
       menu.innerHTML = `
-        <button class="ctx-btn" data-action="edit">✏️ 編輯</button>
+        <button class="ctx-btn" data-action="edit">${ICONS.edit} 編輯</button>
         <button class="ctx-btn" data-action="move">📋 移到其他日期</button>
-        <button class="ctx-btn danger" data-action="delete">🗑️ 刪除</button>`;
+        <button class="ctx-btn danger" data-action="delete">${ICONS.trash} 刪除</button>`;
       document.body.appendChild(menu);
 
       menu.querySelector('[data-action=edit]').addEventListener('click', () => {
