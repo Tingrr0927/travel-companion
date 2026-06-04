@@ -379,6 +379,13 @@ export const ItineraryModule = (() => {
         document.getElementById('item-actual-cost').value = item.actualCost != null ? item.actualCost : '';
         document.getElementById('item-planb-input').value = item.planB || '';
         document.getElementById('item-completed-cb').checked = item.completed || false;
+      } else {
+        // Auto-fill current time (rounded to nearest 15 min) for new items
+        const now = new Date();
+        const roundedMin = Math.ceil(now.getMinutes() / 15) * 15;
+        const h = String(now.getHours() + Math.floor(roundedMin / 60)).padStart(2, '0');
+        const m = String(roundedMin % 60).padStart(2, '0');
+        document.getElementById('item-start-time').value = `${h}:${m}`;
       }
       openBottomSheet('item-sheet');
     } catch(e) {}

@@ -196,6 +196,10 @@ export const TripsModule = (() => {
       } else {
         titleEl.textContent = '新增旅程';
         if (preview) preview.style.display = 'none';
+        // Auto-fill today's date when creating a new trip
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('trip-start-input').value = today;
+        document.getElementById('trip-end-input').value = today;
       }
       openBottomSheet('trip-sheet');
     } catch(e) {}
