@@ -951,9 +951,24 @@ body.sheet-open .sheet-overlay {
   text-align: center;
   gap: 12px;
 }
-.empty-icon { font-size: 56px; }
+.empty-icon { display: flex; align-items: center; justify-content: center; }
+.empty-icon svg { color: var(--primary); opacity: 0.3; }
 .empty-state h3 { font-size: 18px; font-weight: 700; color: var(--text-primary); }
 .empty-state p { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+
+/* ===== Inline SVG helpers ===== */
+.item-type-icon { display: inline-flex; align-items: center; flex-shrink: 0; }
+.item-type-icon svg { width: 18px; height: 18px; }
+.expense-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.expense-icon svg { width: 22px; height: 22px; color: var(--text-secondary); }
+.map-item-icon { display: flex; align-items: center; flex-shrink: 0; }
+.map-item-icon svg { width: 22px; height: 22px; color: var(--text-secondary); }
+.trip-dates svg, .trip-spent svg { vertical-align: middle; position: relative; top: -1px; margin-right: 2px; color: var(--text-secondary); }
+.item-time svg, .item-addr svg { vertical-align: middle; position: relative; top: -1px; margin-right: 2px; color: var(--text-secondary); }
+.acc-header-inner { display: inline-flex; align-items: center; gap: 8px; }
+.acc-header-inner svg { color: var(--text-secondary); }
+.section-title { display: flex; align-items: center; gap: 6px; }
+.section-title svg { color: var(--text-secondary); flex-shrink: 0; }
 
 /* ===== Misc ===== */
 .empty-hint { font-size: 13px; color: var(--text-secondary); padding: 12px 0; text-align: center; }

@@ -65,7 +65,7 @@ const TripsModule = (() => {
       if (!trips.length) {
         container.innerHTML = `
           <div class="empty-state">
-            <div class="empty-icon">✈️</div>
+            <div class="empty-icon">${icon('suitcase',56,1.25)}</div>
             <h3>還沒有旅程</h3>
             <p>點擊右下角按鈕開始規劃你的第一次旅行</p>
           </div>`;
@@ -90,11 +90,11 @@ const TripsModule = (() => {
             </div>
             <div class="trip-body">
               <div class="trip-meta">
-                <span class="trip-dates">📅 ${formatDateShort(trip.startDate)} ~ ${formatDateShort(trip.endDate)} ${trip.startDate.split('-')[0]}</span>
+                <span class="trip-dates">${icon('calendar',13,2)} ${formatDateShort(trip.startDate)} ~ ${formatDateShort(trip.endDate)} ${trip.startDate.split('-')[0]}</span>
                 <span class="trip-days">${days} 天</span>
               </div>
               <div class="trip-stats">
-                <span class="trip-spent">💰 ${formatMoney(spent)}</span>
+                <span class="trip-spent">${icon('creditCard',13,2)} ${formatMoney(spent)}</span>
                 <div class="trip-progress-wrap">
                   <div class="trip-progress-bar" style="width:${progress}%"></div>
                 </div>

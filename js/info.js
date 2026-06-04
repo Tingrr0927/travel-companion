@@ -21,7 +21,7 @@ const InfoModule = (() => {
       if (!container) return;
 
       if (!tripId) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><h3>請先選擇旅程</h3></div>`;
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('info',56,1.25)}</div><h3>請先選擇旅程</h3></div>`;
         return;
       }
 
@@ -31,7 +31,7 @@ const InfoModule = (() => {
         <div class="accordion">
           <div class="accordion-item" id="acc-flight">
             <button class="accordion-header" data-target="acc-flight-body">
-              <span>✈️ 航班資訊</span><span class="acc-arrow">▼</span>
+              <span class="acc-header-inner">${icon('plane',18)} 航班資訊</span><span class="acc-arrow">▼</span>
             </button>
             <div class="accordion-body" id="acc-flight-body">
               <form id="flight-form" class="info-form">
@@ -74,7 +74,7 @@ const InfoModule = (() => {
 
           <div class="accordion-item" id="acc-hotel">
             <button class="accordion-header" data-target="acc-hotel-body">
-              <span>🏨 住宿資訊</span><span class="acc-arrow">▼</span>
+              <span class="acc-header-inner">${icon('bed',18)} 住宿資訊</span><span class="acc-arrow">▼</span>
             </button>
             <div class="accordion-body" id="acc-hotel-body">
               <div id="hotels-list">
@@ -86,7 +86,7 @@ const InfoModule = (() => {
 
           <div class="accordion-item" id="acc-emergency">
             <button class="accordion-header" data-target="acc-emergency-body">
-              <span>🆘 緊急資訊</span><span class="acc-arrow">▼</span>
+              <span class="acc-header-inner">${icon('phone',18)} 緊急資訊</span><span class="acc-arrow">▼</span>
             </button>
             <div class="accordion-body" id="acc-emergency-body">
               <form id="emergency-form" class="info-form">
@@ -220,7 +220,7 @@ const InfoModule = (() => {
             <input class="form-input" name="name" value="${escapeHtml(h.name||'')}">
           </div>
           <div class="form-row">
-            <label class="form-label">地址 <span class="hotel-map-link clickable" data-addr="${escapeHtml(h.address||'')}" style="${h.address?'':'display:none'}">📍開啟地圖</span></label>
+            <label class="form-label">地址 <span class="hotel-map-link clickable" data-addr="${escapeHtml(h.address||'')}" style="${h.address?'':'display:none'}">${icon('pin',13,2)} 開啟地圖</span></label>
             <input class="form-input" name="address" value="${escapeHtml(h.address||'')}" placeholder="飯店地址">
           </div>
           <div class="form-row-2">

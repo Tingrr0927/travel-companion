@@ -2,12 +2,12 @@
 
 const ItineraryModule = (() => {
   const TYPE_META = {
-    attraction: { label: '景點', icon: '🏛️', color: '#4F7EFF' },
-    restaurant:  { label: '餐廳', icon: '🍜', color: '#FF7043' },
-    hotel:       { label: '住宿', icon: '🏨', color: '#8B5CF6' },
-    transport:   { label: '交通', icon: '🚗', color: '#06B6D4' },
-    shopping:    { label: '購物', icon: '🛍️', color: '#EC4899' },
-    other:       { label: '備用', icon: '🔄', color: '#6B7280' },
+    attraction: { label: '景點', icon: () => icon('landmark', 18), color: '#4F7EFF' },
+    restaurant:  { label: '餐廳', icon: () => icon('coffee', 18),   color: '#FF7043' },
+    hotel:       { label: '住宿', icon: () => icon('bed', 18),      color: '#8B5CF6' },
+    transport:   { label: '交通', icon: () => icon('car', 18),      color: '#06B6D4' },
+    shopping:    { label: '購物', icon: () => icon('shoppingBag',18),color: '#EC4899' },
+    other:       { label: '備用', icon: () => icon('refresh', 18),  color: '#6B7280' },
   };
 
   let currentDay = null;
@@ -103,7 +103,7 @@ const ItineraryModule = (() => {
       if (!items.length) {
         container.innerHTML = `
           <div class="empty-state">
-            <div class="empty-icon">🗓️</div>
+            <div class="empty-icon">${icon('calendar', 56, 1.25)}</div>
             <h3>今天還沒有行程</h3>
             <p>點擊右下角按鈕新增第一個行程</p>
           </div>`;
@@ -120,18 +120,18 @@ const ItineraryModule = (() => {
         li.className = 'item-card';
         li.dataset.id = item.id;
         li.innerHTML = `
-          ${conflict ? `<div class="conflict-bar">⚠️ 時間可能與「${escapeHtml(conflict)}」衝突</div>` : ''}
+          ${conflict ? `<div class="conflict-bar">${icon('warning',14,2)} 時間可能與「${escapeHtml(conflict)}」衝突</div>` : ''}
           <div class="item-left-bar" style="background:${meta.color}"></div>
           <div class="item-body">
             <div class="item-header">
-              <span class="item-type-icon">${meta.icon}</span>
+              <span class="item-type-icon">${meta.icon()}</span>
               <span class="item-name ${item.completed ? 'completed' : ''}">${escapeHtml(item.name)}</span>
               <label class="item-check">
                 <input type="checkbox" class="item-done-cb" ${item.completed ? 'checked' : ''} data-id="${item.id}">
               </label>
             </div>
-            ${item.startTime ? `<div class="item-time">⏰ ${item.startTime}${item.endTime ? ' ~ ' + item.endTime : ''}</div>` : ''}
-            ${item.address ? `<div class="item-addr clickable" data-addr="${escapeHtml(item.address)}" data-maps="${escapeHtml(item.mapsUrl||'')}">📍 ${escapeHtml(item.address)}</div>` : ''}
+            ${item.startTime ? `<div class="item-time">${icon('clock',13,2)} ${item.startTime}${item.endTime ? ' ~ ' + item.endTime : ''}</div>` : ''}
+            ${item.address ? `<div class="item-addr clickable" data-addr="${escapeHtml(item.address)}" data-maps="${escapeHtml(item.mapsUrl||'')}">${icon('pin',13,2)} ${escapeHtml(item.address)}</div>` : ''}
             ${item.estimatedCost ? `<div class="item-cost">預估：${formatMoney(item.estimatedCost)}${item.actualCost != null ? '　實際：' + formatMoney(item.actualCost) : ''}</div>` : ''}
             ${item.notes ? `<div class="item-notes">${escapeHtml(item.notes)}</div>` : ''}
           </div>
@@ -241,7 +241,7 @@ const ItineraryModule = (() => {
       menu.className = 'context-menu';
       menu.innerHTML = `
         <button class="ctx-btn" data-action="edit">${ICONS.edit} 編輯</button>
-        <button class="ctx-btn" data-action="move">📋 移到其他日期</button>
+        <button class="ctx-btn" data-action="move">${icon('clipboard',16)} 移到其他日期</button>
         <button class="ctx-btn danger" data-action="delete">${ICONS.trash} 刪除</button>`;
       document.body.appendChild(menu);
 

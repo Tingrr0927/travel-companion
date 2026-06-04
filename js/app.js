@@ -156,6 +156,10 @@ const App = (() => {
       // restore current trip
       currentTripId = Storage.get('current_trip', null);
 
+      // inject static empty state icons that can't be set in HTML directly
+      const itinEmpty = document.getElementById('itinerary-empty-icon');
+      if (itinEmpty) itinEmpty.innerHTML = icon('calendar', 56, 1.25);
+
       // init all modules
       TripsModule.init();
       ItineraryModule.init();
@@ -193,12 +197,12 @@ const MapModule = (() => {
   }
 
   const TYPE_META = {
-    attraction: { label: '景點', icon: '🏛️' },
-    restaurant:  { label: '餐廳', icon: '🍜' },
-    hotel:       { label: '住宿', icon: '🏨' },
-    transport:   { label: '交通', icon: '🚗' },
-    shopping:    { label: '購物', icon: '🛍️' },
-    other:       { label: '備用', icon: '🔄' },
+    attraction: { label: '景點', icon: () => icon('landmark', 22) },
+    restaurant:  { label: '餐廳', icon: () => icon('coffee', 22)   },
+    hotel:       { label: '住宿', icon: () => icon('bed', 22)      },
+    transport:   { label: '交通', icon: () => icon('car', 22)      },
+    shopping:    { label: '購物', icon: () => icon('shoppingBag',22)},
+    other:       { label: '備用', icon: () => icon('refresh', 22)  },
   };
 
   function render() {
@@ -208,7 +212,7 @@ const MapModule = (() => {
       if (!container) return;
 
       if (!tripId) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-icon">🗺️</div><h3>請先選擇旅程</h3></div>`;
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('mapPin',56,1.25)}</div><h3>請先選擇旅程</h3></div>`;
         return;
       }
 
@@ -219,7 +223,7 @@ const MapModule = (() => {
       const withLocation = allItems.filter(i => i.address || i.mapsUrl);
 
       if (!withLocation.length) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-icon">📍</div><h3>尚無地點資訊</h3><p>在行程中加入地址後即可在此查看</p></div>`;
+        container.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('pin',56,1.25)}</div><h3>尚無地點資訊</h3><p>在行程中加入地址後即可在此查看</p></div>`;
         return;
       }
 
@@ -243,15 +247,15 @@ const MapModule = (() => {
           html += `
             <div class="map-item">
               <div class="map-item-info">
-                <span class="map-item-icon">${meta.icon}</span>
+                <span class="map-item-icon">${meta.icon()}</span>
                 <div>
                   <div class="map-item-name">${escapeHtml(item.name)}</div>
                   ${addr ? `<div class="map-item-addr">${escapeHtml(addr)}</div>` : ''}
                 </div>
               </div>
               <div class="map-item-btns">
-                <a href="${escapeHtml(appUrl)}" target="_blank" class="btn btn-sm btn-outline">📍 App</a>
-                <a href="${escapeHtml(webUrl)}" target="_blank" class="btn btn-sm btn-primary">🌐 網頁</a>
+                <a href="${escapeHtml(appUrl)}" target="_blank" class="btn btn-sm btn-outline">${icon('pin',14,2)} App</a>
+                <a href="${escapeHtml(webUrl)}" target="_blank" class="btn btn-sm btn-primary">${icon('globe',14,2)} 網頁</a>
               </div>
             </div>`;
         });

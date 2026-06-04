@@ -37,13 +37,13 @@ const ChecklistModule = (() => {
       if (!el) return;
 
       if (!tripId) {
-        el.innerHTML = `<div class="empty-state"><div class="empty-icon">☑️</div><h3>請先選擇旅程</h3><p>在 Trips 頁面選擇旅程</p></div>`;
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('checkSquare',56,1.25)}</div><h3>請先選擇旅程</h3><p>在 Trips 頁面選擇旅程</p></div>`;
         return;
       }
 
       const data = getData(tripId) || [];
       if (!data.length) {
-        el.innerHTML = `<div class="empty-state"><div class="empty-icon">☑️</div><h3>清單是空的</h3><p>點擊右下角新增項目</p></div>`;
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">${icon('checkSquare',56,1.25)}</div><h3>清單是空的</h3><p>點擊右下角新增項目</p></div>`;
         return;
       }
 

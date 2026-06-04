@@ -2,13 +2,13 @@
 
 const BudgetModule = (() => {
   const CATEGORIES = [
-    { id: 'flight',     label: '機票',     icon: '✈️' },
-    { id: 'hotel',      label: '住宿',     icon: '🏨' },
-    { id: 'transport',  label: '交通',     icon: '🚌' },
-    { id: 'food',       label: '餐飲',     icon: '🍽️' },
-    { id: 'attraction', label: '景點門票', icon: '🎫' },
-    { id: 'shopping',   label: '購物',     icon: '🛍️' },
-    { id: 'other',      label: '其他',     icon: '📦' },
+    { id: 'flight',     label: '機票',     icon: () => icon('plane', 22)       },
+    { id: 'hotel',      label: '住宿',     icon: () => icon('bed', 22)         },
+    { id: 'transport',  label: '交通',     icon: () => icon('bus', 22)         },
+    { id: 'food',       label: '餐飲',     icon: () => icon('utensils', 22)    },
+    { id: 'attraction', label: '景點門票', icon: () => icon('tag', 22)         },
+    { id: 'shopping',   label: '購物',     icon: () => icon('shoppingBag', 22) },
+    { id: 'other',      label: '其他',     icon: () => icon('archive', 22)     },
   ];
 
   const ITEM_TYPE_TO_CAT = {
@@ -87,7 +87,7 @@ const BudgetModule = (() => {
       const el = document.getElementById('budget-content');
       if (el) el.innerHTML = `
         <div class="empty-state">
-          <div class="empty-icon">💰</div>
+          <div class="empty-icon">${icon('creditCard',56,1.25)}</div>
           <h3>請先選擇旅程</h3>
           <p>在 Trips 頁面選擇或建立旅程後再查看預算</p>
         </div>`;
@@ -173,7 +173,7 @@ const BudgetModule = (() => {
       const palette = ['#4F7EFF','#FF7043','#8B5CF6','#06B6D4','#22C55E','#F59E0B','#EC4899'];
       CATEGORIES.forEach((c, i) => {
         if (byCategory[c.id] > 0) {
-          labels.push(`${c.icon} ${c.label}`);
+          labels.push(c.label);
           data.push(byCategory[c.id]);
           colors.push(palette[i % palette.length]);
         }
@@ -182,7 +182,7 @@ const BudgetModule = (() => {
       if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
       if (!data.length) {
-        canvas.parentElement.innerHTML = `<div class="empty-state" style="padding:24px 0"><div class="empty-icon">📊</div><p>尚無支出記錄</p></div>`;
+        canvas.parentElement.innerHTML = `<div class="empty-state" style="padding:24px 0"><div class="empty-icon">${icon('barChart',56,1.25)}</div><p>尚無支出記錄</p></div><canvas id="budget-chart" style="display:none"></canvas>`;
         return;
       }
 
@@ -220,7 +220,7 @@ const BudgetModule = (() => {
         const cat = CATEGORIES.find(c => c.id === exp.category) || CATEGORIES[6];
         return `
           <div class="expense-item">
-            <span class="expense-icon">${cat.icon}</span>
+            <span class="expense-icon">${cat.icon()}</span>
             <div class="expense-info">
               <span class="expense-desc">${escapeHtml(exp.description)}</span>
               <span class="expense-meta">${cat.label} · ${exp.date || ''}</span>
