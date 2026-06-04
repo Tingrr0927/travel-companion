@@ -1,46 +1,30 @@
-/* firebase.js — Firebase app initialization, Firestore and Auth exports
- *
- * SETUP: Replace every "YOUR_..." placeholder below with your real Firebase
- * project credentials. Find them in the Firebase console at:
- * https://console.firebase.google.com → Project Settings → General → Your Apps
- */
+/* firebase.js — Firebase initialization */
 
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js';
 import {
-  getFirestore,
-  enableIndexedDbPersistence,
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js';
+import { getAuth } from 'https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js';
 
-// ---------------------------------------------------------------------------
-// Replace these placeholders with your Firebase project configuration.
-// ---------------------------------------------------------------------------
 const firebaseConfig = {
-  apiKey:            'YOUR_API_KEY',
-  authDomain:        'YOUR_AUTH_DOMAIN',
-  projectId:         'YOUR_PROJECT_ID',
-  storageBucket:     'YOUR_STORAGE_BUCKET',
-  messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-  appId:             'YOUR_APP_ID',
+  apiKey:            'AIzaSyDC0mjId_eWymL0WPDK747U08f1i47Kr3g',
+  authDomain:        'travel-companion-b90ca.firebaseapp.com',
+  projectId:         'travel-companion-b90ca',
+  storageBucket:     'travel-companion-b90ca.firebasestorage.app',
+  messagingSenderId: '354609961775',
+  appId:             '1:354609961775:web:01e05b6a08461594955fda',
+  measurementId:     'G-9HFRY40F8Y',
 };
-// ---------------------------------------------------------------------------
 
 const app = initializeApp(firebaseConfig);
 
-export const db   = getFirestore(app);
-export const auth = getAuth(app);
-
-// Enable offline persistence via IndexedDB so the app works without network.
-// The promise is intentionally not awaited — persistence is best-effort and
-// failures (e.g. multiple tabs) are non-fatal.
-enableIndexedDbPersistence(db).catch(err => {
-  if (err.code === 'failed-precondition') {
-    // Multiple tabs open; persistence can only be enabled in one tab at a time.
-    console.warn('[Firebase] IndexedDB persistence unavailable: multiple tabs open.');
-  } else if (err.code === 'unimplemented') {
-    // The current browser does not support IndexedDB persistence.
-    console.warn('[Firebase] IndexedDB persistence not supported in this browser.');
-  } else {
-    console.warn('[Firebase] enableIndexedDbPersistence error:', err);
-  }
+// Use persistent local cache (IndexedDB) for offline support — v12 API
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+  }),
 });
+
+export const auth = getAuth(app);

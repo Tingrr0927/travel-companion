@@ -3,7 +3,7 @@
 import {
   signInAnonymously,
   onAuthStateChanged,
-} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+} from 'https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js';
 
 import { auth } from './firebase.js';
 
